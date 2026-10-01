@@ -2,7 +2,7 @@
 
 > **Note:** DiDemo is a plain .NET 8 **console** app. It only uses the `Microsoft.Extensions.DependencyInjection` package. There is no ASP.NET Core, no web host, no HTTP requests. Everything I say about ASP.NET Core in section 2 is how a real web app does it, not something this project runs.
 > **Note:** `SqlOrderRepository` and `SmtpEmailSender` are stand-ins. They don't touch a database or send email. They just print a line to the console. When I say the "before" version would hit a real database and send a real email every time, that's what would happen with real classes. The demo doesn't show it.
-> **Note:** There is no unit test project. Section 4 of `Program.cs` is a normal console section that checks two `bool`s and prints them. The walkthrough doc shows `Assert.Single(...)` and different variable names (`repository`, `emailSender`). That code is not in the project. The real code is shown in section 3 below.
+> **Note:** There is no unit test project. Section 4 of `Program.cs` is a normal console section that checks two `bool`s and prints them. The walkthrough doc shows `Assert.Single(...)` and different variable names (`repository`, `emailSender`). That code is not in the project. The real code is shown in section 4 below.
 > **Note:** `Program.cs` Section 5 is titled "Scoped vs Singleton vs Transient, side by side", but it only registers and tests **Scoped**. `AddTransient` is not used anywhere in the code. `AddSingleton` only shows up in Section 6. What I say about Transient and Singleton comes from how the container works, not from this demo's output.
 > **Note:** `ValidateScopes` does not make the bug fail at startup. In the code it fails when `GetRequiredService<BadSingletonService>()` is called, not when the provider is built. (Failing at build time needs `ValidateOnBuild`, which the code doesn't use.) Also, the code never runs the bad singleton *without* validation, so the "first request's id leaks to everyone" story is explained, not shown.
 > **Note:** In a real ASP.NET Core app, `ValidateScopes` is on by default in Development. I can't confirm that from this code, since there's no ASP.NET Core here.
@@ -150,7 +150,85 @@ Simple rule: **an object should only depend on things that live at least as long
 
 ---
 
-## 3. A concrete C# example — before and after DI
+## 3. How it works (matches the drawing)
+
+> **Note:** Under the row 1 interface, the caption says "the container decides which one you get." Section 1 says DI doesn't need a container: whoever builds the object decides. In DiDemo the fake is passed in by hand (`new OrderService(fakeRepo, fakeEmail)`), not picked by a container.
+> **Note:** The row 2 code lines say `services.AddScoped<IEmailSender, SmtpEmailSender>();` with no factory. Section 2 explains why DiDemo *needs* a factory there (`SmtpEmailSender` takes a host-name string the container can't guess). Also, the `// in tests` line registering `FakeEmailSender` in the container isn't how DiDemo tests. It passes fakes by hand. Read both lines as "the idea", not real code.
+> **Note:** The two dashed "implements" arrows point *from* `IEmailSender` *to* the two classes. The usual way to draw it is the other way: the class points at the interface it implements. Only one "implements" label covers both arrows.
+> **Note:** The red arrow in row 3 is labeled "Singleton → Scoped", but it goes from the Singleton box to the "Captive dependency!" box, not to the Scoped box. It starts at the Singleton box's left edge, so it runs through that box.
+> **Note:** The "Captive dependency!" box says the singleton "leaks the first request's state forever." Section 2 says that's only what *would* happen. With `ValidateScopes` on, the container refuses to build it. The drawing doesn't mention `ValidateScopes`.
+> **Note:** Row 1 only shows `BeforeOrderService` creating `SmtpEmailSender`. The real class now also creates a `SqlOrderRepository`. The drawing also has nothing about IoC / the Hollywood principle, building objects by hand (DI without a container), or Service Locator. Those parts of section 1 aren't in the drawing.
+> **Note:** In the four lifetime / captive boxes, the box title and its two-line description are placed almost on top of each other in the file, so they may look crowded or overlap when opened.
+
+The drawing is called **"Dependency Injection — Theory Map"**, with the subtitle *"DiDemo: from tight coupling to a testable, lifetime-safe container."* It has three numbered rows, top to bottom. Here's what I say while pointing at each one.
+
+### Row 1 — "Tight coupling → depend on an abstraction"
+
+**Left side (red = the problem):**
+
+1. **`BeforeOrderService`** (red box) — The "before" class.
+2. **`SmtpEmailSender`** (red box) — The email class it uses.
+3. **Arrow `BeforeOrderService` → `SmtpEmailSender`**, labeled **"new (hard-coded)"** — "The service makes its own email sender with `new`. It's welded to that one class."
+4. Caption under it: **"Nothing can be swapped out or tested in isolation."**
+
+**Right side (green and blue = the fix):**
+
+5. **`OrderService`** (green box) — The "after" class.
+6. **`IEmailSender`** (blue box) — The interface. Blue in this drawing means "abstraction / container stuff".
+7. **Arrow `OrderService` → `IEmailSender`**, labeled **"constructor"** — "Now it doesn't make anything. It just asks for an `IEmailSender` in its constructor."
+8. **`SmtpEmailSender (real)`** (green box, top) and **`FakeEmailSender (test)`** (purple box, bottom) — The two classes that can sit behind the interface.
+9. **Two dashed arrows from `IEmailSender`** to those two boxes, with one label: **"implements"** — "Either one fits in that slot."
+10. Caption: **"Two implementations, one interface — the container decides which one you get."**
+
+What I say: *"Left is the problem: the class builds its own helper. Right is the fix: the class only knows the interface, and someone outside picks real or fake."*
+
+### Row 2 — "The container wires the graph"
+
+Three boxes in a line, left to right:
+
+1. **`ServiceCollection`** (blue box) — The list of registrations.
+2. **Arrow →**, labeled **`BuildServiceProvider()`**
+3. **`ServiceProvider`** (blue box) — The actual container, built from the list.
+4. **Arrow →**, labeled **`GetRequiredService<T>()`**
+5. **`OrderService`** (green box) — What comes out, already filled in.
+
+Under the row, two lines of code:
+
+- `services.AddScoped<IEmailSender, SmtpEmailSender>();`
+- `services.AddScoped<IEmailSender, FakeEmailSender>();   // in tests`
+
+What I say: *"Register into the collection, build the provider, ask for what you need. I never call `new OrderService(...)`. Same registration, different implementation, and you've swapped real for fake."*
+
+### Row 3 — "Lifetimes decide who shares an instance"
+
+Three grey boxes, then one red box:
+
+1. **Transient** — "New instance every resolve"
+2. **Scoped** — "One instance per scope (request)"
+3. **Singleton** — "One instance for the whole app"
+4. **Captive dependency!** (red box, right) — "A Singleton holding a Scoped instance leaks the first request's state forever."
+5. **Red arrow from the Singleton box → the Captive dependency box**, labeled **"Singleton → Scoped"** — "This is the bug: a long-lived thing holding a short-lived thing."
+
+Under the row, the last line of the drawing:
+
+**"Fix: inject IServiceScopeFactory into the Singleton and create a scope on demand."**
+
+What I say: *"Three lifetimes, from shortest to longest. The rule is: never let a long one hold a short one. If a singleton needs scoped stuff, it gets the scope factory and makes a fresh scope each time."*
+
+**How they connect (all arrows in the drawing):**
+- `BeforeOrderService` → `SmtpEmailSender`: "new (hard-coded)" (solid, red)
+- `OrderService` → `IEmailSender`: "constructor" (solid, green)
+- `IEmailSender` → `SmtpEmailSender (real)`: "implements" (dashed, blue)
+- `IEmailSender` → `FakeEmailSender (test)`: "implements" (dashed, blue, shares the one label)
+- `ServiceCollection` → `ServiceProvider`: "BuildServiceProvider()" (solid, blue)
+- `ServiceProvider` → `OrderService`: "GetRequiredService<T>()" (solid, green)
+- Singleton → Captive dependency!: "Singleton → Scoped" (solid, red)
+
+The three lifetime boxes aren't connected to each other, and the rows aren't connected to each other by arrows.
+
+---
+
+## 4. A concrete C# example — before and after DI
 
 ### Before: `Services/BeforeOrderService.cs`
 
@@ -257,7 +335,7 @@ With `BeforeOrderService`, this is impossible. There's no way to give it a fake.
 
 ---
 
-## 4. My own opinion
+## 5. My own opinion
 
 > ✍️ **To fill in myself — don't read this prompt out loud.**
 > How important do I actually think DI is, and why? Think about:
