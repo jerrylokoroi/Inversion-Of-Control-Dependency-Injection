@@ -155,10 +155,8 @@ Simple rule: **an object should only depend on things that live at least as long
 > **Note:** Under the row 1 interface, the caption says "the container decides which one you get." Section 1 says DI doesn't need a container: whoever builds the object decides. In DiDemo the fake is passed in by hand (`new OrderService(fakeRepo, fakeEmail)`), not picked by a container.
 > **Note:** The row 2 code lines say `services.AddScoped<IEmailSender, SmtpEmailSender>();` with no factory. Section 2 explains why DiDemo *needs* a factory there (`SmtpEmailSender` takes a host-name string the container can't guess). Also, the `// in tests` line registering `FakeEmailSender` in the container isn't how DiDemo tests. It passes fakes by hand. Read both lines as "the idea", not real code.
 > **Note:** The two dashed "implements" arrows point *from* `IEmailSender` *to* the two classes. The usual way to draw it is the other way: the class points at the interface it implements. Only one "implements" label covers both arrows.
-> **Note:** The red arrow in row 3 is labeled "Singleton → Scoped", but it goes from the Singleton box to the "Captive dependency!" box, not to the Scoped box. It starts at the Singleton box's left edge, so it runs through that box.
 > **Note:** The "Captive dependency!" box says the singleton "leaks the first request's state forever." Section 2 says that's only what *would* happen. With `ValidateScopes` on, the container refuses to build it. The drawing doesn't mention `ValidateScopes`.
 > **Note:** Row 1 only shows `BeforeOrderService` creating `SmtpEmailSender`. The real class now also creates a `SqlOrderRepository`. The drawing also has nothing about IoC / the Hollywood principle, building objects by hand (DI without a container), or Service Locator. Those parts of section 1 aren't in the drawing.
-> **Note:** In the four lifetime / captive boxes, the box title and its two-line description are placed almost on top of each other in the file, so they may look crowded or overlap when opened.
 
 The drawing is called **"Dependency Injection — Theory Map"**, with the subtitle *"DiDemo: from tight coupling to a testable, lifetime-safe container."* It has three numbered rows, top to bottom. Here's what I say while pointing at each one.
 
@@ -207,7 +205,7 @@ Three grey boxes, then one red box:
 2. **Scoped** — "One instance per scope (request)"
 3. **Singleton** — "One instance for the whole app"
 4. **Captive dependency!** (red box, right) — "A Singleton holding a Scoped instance leaks the first request's state forever."
-5. **Red arrow from the Singleton box → the Captive dependency box**, labeled **"Singleton → Scoped"** — "This is the bug: a long-lived thing holding a short-lived thing."
+5. **Short red arrow from the Singleton box → the Scoped box** (across the gap between them), labeled **"Singleton → Scoped"** just above it — "This is the bug: a long-lived thing holding a short-lived thing. That's what the red box on the right is warning about."
 
 Under the row, the last line of the drawing:
 
@@ -222,9 +220,9 @@ What I say: *"Three lifetimes, from shortest to longest. The rule is: never let 
 - `IEmailSender` → `FakeEmailSender (test)`: "implements" (dashed, blue, shares the one label)
 - `ServiceCollection` → `ServiceProvider`: "BuildServiceProvider()" (solid, blue)
 - `ServiceProvider` → `OrderService`: "GetRequiredService<T>()" (solid, green)
-- Singleton → Captive dependency!: "Singleton → Scoped" (solid, red)
+- Singleton → Scoped: "Singleton → Scoped" (solid, red)
 
-The three lifetime boxes aren't connected to each other, and the rows aren't connected to each other by arrows.
+Transient isn't connected to anything, and nothing points at the "Captive dependency!" box. It's a warning box at the right end of the row, explaining what the Singleton → Scoped arrow means. The rows aren't connected to each other by arrows.
 
 ---
 
