@@ -5,7 +5,7 @@ Section("1. BEFORE - tightly coupled");
 {
     var service = new BeforeOrderService();
     service.PlaceOrder(new Order { Id = 1, CustomerEmail = "alice@example.com", Total = 42.00m });
-    Console.WriteLine("  -> BeforeOrderService can ONLY ever use SmtpEmailSender. No swapping, no faking it in a test.");
+    Console.WriteLine("  -> BeforeOrderService can ONLY ever use SqlOrderRepository and SmtpEmailSender. No swapping, no faking it in a test.");
 }
 
 Section("2. AFTER - constructor injection, wired up by hand (no container yet)");
@@ -15,7 +15,7 @@ Section("2. AFTER - constructor injection, wired up by hand (no container yet)")
     var service = new OrderService(repository, emailSender);
 
     service.PlaceOrder(new Order { Id = 2, CustomerEmail = "bob@example.com", Total = 17.50m });
-    Console.WriteLine("  -> Same OrderService class could just as easily receive a PostgresOrderRepository. It doesn't know or care.");
+    Console.WriteLine("  -> Same OrderService class could just as easily receive any other IOrderRepository (like the fake in Section 4). It doesn't know or care.");
 }
 
 Section("3. AFTER - using the real ASP.NET Core DI container");

@@ -6,7 +6,7 @@ This is the companion reference for the DiDemo presentation: what the project te
 
 ## Overview
 
-DiDemo is a small, self-contained .NET 8 console project (about 120 lines across 9 files) built to teach one thing well: how and why to use Dependency Injection, on top of Microsoft.Extensions.DependencyInjection.
+DiDemo is a small, self-contained .NET 8 console project (about 250 lines across 14 .cs files) built to teach one thing well: how and why to use Dependency Injection, on top of Microsoft.Extensions.DependencyInjection.
 
 The running example is placing an order: something has to save it, and something has to email a confirmation. Every act in the demo reuses this same example, so the audience only has to learn one domain.
 
@@ -40,17 +40,24 @@ Target framework: net8.0. Single NuGet dependency: Microsoft.Extensions.Dependen
 ```csharp
 public class BeforeOrderService
 {
+    private readonly SqlOrderRepository _repository;
     private readonly SmtpEmailSender _emailSender;
 
     public BeforeOrderService()
-        => _emailSender = new SmtpEmailSender("smtp.company.com");
+    {
+        _repository = new SqlOrderRepository("Server=prod-db;...");
+        _emailSender = new SmtpEmailSender("smtp.company.com");
+    }
 
     public void PlaceOrder(Order order)
-        => _emailSender.Send(order.CustomerEmail, "Order confirmed");
+    {
+        _repository.Save(order);
+        _emailSender.Send(order.CustomerEmail, "Order confirmed");
+    }
 }
 ```
 
-The constructor builds its own collaborator. Nothing can swap `SmtpEmailSender` out, and testing `PlaceOrder` means sending a real email.
+The constructor builds its own collaborators. Nothing can swap `SqlOrderRepository` or `SmtpEmailSender` out, and testing `PlaceOrder` means hitting a real database and sending a real email.
 
 ### Act 2 — Constructor injection (the fix)
 
